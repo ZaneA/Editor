@@ -1,0 +1,152 @@
+#!/usr/bin/env ruby
+
+# Small self-hosting text editor.
+
+require 'sinatra'
+require 'json'
+require 'rack'
+
+require 'linguist'
+
+require 'open-uri'
+require 'zip/zip'
+
+# Download CodeMirror if necessary
+if !Dir.exists? File.join(['public', 'codemirror'])
+  download_path = File.join(['.tmp', 'codemirror.zip'])
+
+  # Fetch CodeMirror
+  FileUtils.mkdir_p '.tmp'
+  File.open(download_path, 'wb') do |output|
+    open('http://codemirror.net/codemirror.zip', 'rb') do |input|
+      output.write(input.read)
+    end
+  end
+
+  raise 'Could not download CodeMirror.' unless File.exists? download_path
+
+  Zip::ZipFile.open(download_path) do |zipfile|
+    zipfile.each do |file|
+      path = File.join(['public', 'codemirror', file.to_s])
+      FileUtils.mkdir_p(File.dirname(path))
+      zipfile.extract(file, path) { true }
+    end
+  end
+end
+
+configure :development do
+  Sinatra::Application.reset!
+  use Rack::Reloader
+end
+
+get '/' do
+  haml :index
+end
+
+#
+# Resources
+#
+
+# App CSS
+get '/resource/app/stylesheet' do
+  scss :stylesheet
+end
+
+# App JS
+get '/resource/app/javascript' do
+  coffee :app
+end
+
+# Fetch an editor mode (ie. javascript/ruby/php/etc)
+get '/resource/editor/mode/*' do |path|
+  send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'mode', path, path]) + '.js'
+end
+
+# Fetch an editor theme (ie. monokai/solarized/twilight/etc)
+get '/resource/editor/theme/*' do |path|
+  send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'theme', path]) + '.css'
+end
+
+# Editor CSS
+get '/resource/editor/stylesheet' do
+  send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'lib', 'codemirror.css'])
+end
+
+# Editor JS
+get '/resource/editor/javascript' do
+  send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'lib', 'codemirror.js'])
+end
+
+# Other editor files (wildcard)
+get '/resource/editor/*' do |path|
+  send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'lib', path])
+end
+
+#
+# API
+#
+
+def linguist_to_codemirror name
+  lookup = {
+    'html' => 'htmlmixed',
+    'scss' => 'less',
+    'json' => 'javascript',
+    'js' => 'javascript'
+  }.assoc(name)
+
+  if lookup
+    lookup[1]
+  else
+    name
+  end
+end
+
+# Retrieve directories or files
+get '/api/files/*' do |path|
+  path = '/' + path
+
+  if Dir.exists? path
+    # Is directory
+    entries = Dir.entries(path)
+    entries.delete('.')
+    entries = entries.delete_if { |e| e =~ /\.(jpg|jpeg|bmp|png|wav|mp3|ogg|xmind|zip|lock|iso|gz|bin)$/ }
+    
+    entries = entries.sort.map do |entry|
+      newpath = File.realpath(File.join([path, entry]))
+      if Dir.exists? newpath
+        { name: entry + '/', path: newpath + '/' }
+      else
+        { name: entry, path: newpath }
+      end
+    end
+    
+    JSON.generate(entries)
+  elsif File.exists? path
+    # Is file
+    language = Linguist::FileBlob.new(path).language
+
+    if language
+      language = linguist_to_codemirror(language.name.downcase)
+    else
+      language = 'markdown'
+    end
+
+    JSON.generate({
+      name: path,
+      base: File.dirname(path),
+      language: language,
+      contents: File.read(path)
+    })
+  else
+    status 404
+  end
+end
+
+# Upload/post a file to be replaced
+put '/api/files/*' do |path|
+  path = '/' + path
+
+  "No Data" unless params[:data]
+  
+  File.write(path, params[:data])
+end
