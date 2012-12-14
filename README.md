@@ -3,6 +3,11 @@ Editor
 
 An incredibly dumb but self-hosting text editor using [CodeMirror](http://codemirror.net) and [Sinatra](http://sinatrarb.com).
 
+License
+---
+
+[WTFPL](http://sam.zoy.org/wtfpl/COPYING). This is just a weekend project, but if you want to contribute something cool I won't say no!
+
 Usage
 ---
 
@@ -15,3 +20,8 @@ Screenshot
 ---
 
 ![Screenshot](https://github.com/ZaneA/Editor/raw/master/screenshot.png "Screenshot")
+
+Todo
+---
+
+- Minimize views until they can be embedded directly into the source
