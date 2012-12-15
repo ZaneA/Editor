@@ -7,5 +7,5 @@ gem 'sass'
 gem 'coffee-script'
 
 gem 'rubyzip'
-
+gem 'launchy'
 gem 'github-linguist'

@@ -5,10 +5,9 @@
 require 'sinatra'
 require 'json'
 require 'rack'
-
-require 'linguist'
-
 require 'open-uri'
+require 'launchy'
+require 'linguist'
 require 'zip/zip'
 
 # Download CodeMirror if necessary
@@ -149,4 +148,11 @@ put '/api/files/*' do |path|
   "No Data" unless params[:data]
   
   File.write(path, params[:data])
+end
+
+# Launch browser with editor URL, needs small hack for Rack::Reloader
+should_run = true unless should_run
+if should_run
+  Launchy.open "http://127.0.0.1:4567/\##{Dir.pwd[1..-1]}/#{File.basename(__FILE__)}"
+  should_run = false
 end
