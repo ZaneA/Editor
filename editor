@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 
-# Small self-hosting text editor.
+# Small self-hosting text editor using CodeMirror and Sinatra.
 
 require 'sinatra'
 require 'json'
@@ -10,11 +10,11 @@ require 'launchy'
 require 'linguist'
 require 'zip/zip'
 
-# Download CodeMirror if necessary
+# Download CodeMirror if necessary.
 if !Dir.exists? File.join(['public', 'codemirror'])
   download_path = File.join(['.tmp', 'codemirror.zip'])
 
-  # Fetch CodeMirror
+  # Fetch CodeMirror.
   FileUtils.mkdir_p '.tmp'
   File.open(download_path, 'wb') do |output|
     open('http://codemirror.net/codemirror.zip', 'rb') do |input|
@@ -24,6 +24,7 @@ if !Dir.exists? File.join(['public', 'codemirror'])
 
   raise 'Could not download CodeMirror.' unless File.exists? download_path
 
+  # Extra the codemirror zip file.
   Zip::ZipFile.open(download_path) do |zipfile|
     zipfile.each do |file|
       path = File.join(['public', 'codemirror', file.to_s])
@@ -34,57 +35,69 @@ if !Dir.exists? File.join(['public', 'codemirror'])
 end
 
 configure :development do
+  # Reset Sinatra routes and use Rack::Reloader to reload application on save.
   Sinatra::Application.reset!
   use Rack::Reloader
 end
 
+# Serve up the index page.
+# Everything should be served through the "API" from here on.
 get '/' do
   haml :index
 end
 
+
 #
-# Resources
+# Resource Routes.
 #
 
-# App CSS
+# App CSS, compiled by SASS.
 get '/resource/app/stylesheet' do
   scss :stylesheet
 end
 
-# App JS
+# App JS, compiled by CoffeeScript.
 get '/resource/app/javascript' do
   coffee :app
 end
 
-# Fetch an editor mode (ie. javascript/ruby/php/etc)
+# Fetch an editor mode (ie. javascript/ruby/php/etc).
+# This is a mode that is used by CodeMirror.
 get '/resource/editor/mode/*' do |path|
   send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'mode', path, path]) + '.js'
 end
 
-# Fetch an editor theme (ie. monokai/solarized/twilight/etc)
+# Fetch an editor theme (ie. monokai/solarized/twilight/etc).
+# This is a theme that is used by CodeMirror.
 get '/resource/editor/theme/*' do |path|
   send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'theme', path]) + '.css'
 end
 
-# Editor CSS
+# Editor CSS.
+# Just send along the regular CodeMirror CSS.
 get '/resource/editor/stylesheet' do
   send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'lib', 'codemirror.css'])
 end
 
 # Editor JS
+# Just send along the regular CodeMirror JS.
 get '/resource/editor/javascript' do
   send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'lib', 'codemirror.js'])
 end
 
-# Other editor files (wildcard)
+# Other editor files (wildcard).
+# Used to  let CodeMirror load any other random bits of JS it needs.
 get '/resource/editor/*' do |path|
   send_file File.join(['public', 'codemirror', 'codemirror-3.0', 'lib', path])
 end
 
+
 #
-# API
+# API Helpers.
 #
 
+# Map a Linguist language name to the equivalent CodeMirror mode.
+# This is used to provide automatic mode switching when opening a file from the filesystem.
 def linguist_to_codemirror name
   lookup = {
     'html' => 'htmlmixed',
@@ -100,16 +113,26 @@ def linguist_to_codemirror name
   end
 end
 
-# Retrieve directories or files
+
+#
+# API Routes
+# Here is the public API of the editor.
+#
+
+# Retrieve directories or files.
+# It is assumed that editor is running locally and thus no security is implemented.
 get '/api/files/*' do |path|
   path = '/' + path
 
   if Dir.exists? path
-    # Is directory
+    # Is directory.
     entries = Dir.entries(path)
     entries.delete('.')
+
+    # Remove a few binary types that we don't want to open.
     entries = entries.delete_if { |e| e =~ /\.(jpg|jpeg|bmp|png|wav|mp3|ogg|xmind|zip|lock|iso|gz|bin)$/ }
     
+    # Build our file list.
     entries = entries.sort.map do |entry|
       newpath = File.realpath(File.join([path, entry]))
       if Dir.exists? newpath
@@ -121,12 +144,15 @@ get '/api/files/*' do |path|
     
     JSON.generate(entries)
   elsif File.exists? path
-    # Is file
+    # Is file.
+    # Use Linguist to decide what language is dominant in this file.
     language = Linguist::FileBlob.new(path).language
 
     if language
+      # Got a language from Linguist so attempt to turn it into something understood by CodeMirror.
       language = linguist_to_codemirror(language.name.downcase)
     else
+      # No language detected, default to Markdown (text-friendly).
       language = 'markdown'
     end
 
@@ -137,11 +163,13 @@ get '/api/files/*' do |path|
       contents: File.read(path)
     })
   else
+    # No file found here.
     status 404
   end
 end
 
-# Upload/post a file to be replaced
+# Upload/post a file to be replaced.
+# Very simple, just take the provided contents and write the file.
 put '/api/files/*' do |path|
   path = '/' + path
 
@@ -150,7 +178,8 @@ put '/api/files/*' do |path|
   File.write(path, params[:data])
 end
 
-# Launch browser with editor URL, needs small hack for Rack::Reloader
+
+# Finally, launch browser with editor URL, needs a small hack for Rack::Reloader.
 should_run = true unless should_run
 if should_run
   Launchy.open "http://127.0.0.1:4567/\##{Dir.pwd[1..-1]}/#{File.basename(__FILE__)}"
