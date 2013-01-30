@@ -173,7 +173,7 @@ end
 put '/api/files/*' do |path|
   path = '/' + path
 
-  "No Data" unless params[:data]
+  return "No Data" unless params[:data]
   
   File.write(path, params[:data])
 end
